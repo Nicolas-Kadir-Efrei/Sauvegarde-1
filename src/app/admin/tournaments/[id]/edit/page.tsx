@@ -2,63 +2,116 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import ProtectedRoute from '@/components/auth/ProtectedRoute';
+import { useAuth } from '@/contexts/AuthContext';
+import Link from 'next/link';
+import { use } from 'react';
 
-interface PageProps {
-  params: {
-    id: string;
-  };
+interface PageParams {
+  id: string;
 }
 
-export default function EditTournamentPage({ params }: PageProps) {
+export default function EditTournamentPage({ params }: { params: Promise<PageParams> }) {
+  // Utiliser React.use pour déballer les paramètres
+  const resolvedParams: PageParams = use(params);
+  const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const [formData, setFormData] = useState({
-    name: '',
-    type: '',
+    tournamentName: '',
+    format: '',
     startDate: '',
-    endDate: '',
+    startTime: '',
     description: '',
     maxParticipants: 8,
-    registrationDeadline: '',
     rules: '',
     prizes: '',
-    status: 'upcoming'
+    status: 'upcoming',
+    gameId: 0
   });
+  const [games, setGames] = useState([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const fetchTournament = async () => {
-      try {
-        const res = await fetch(`/api/admin/tournaments/${params.id}`);
-        const data = await res.json();
+    if (!authLoading && (!user || user.role !== 'admin')) {
+      router.push('/login');
+      return;
+    }
+    
+    if (!authLoading && user && user.role === 'admin') {
+      fetchTournament();
+      fetchGames();
+    }
+  }, [authLoading, user, router, resolvedParams.id]);
 
-        if (!res.ok) {
-          throw new Error(data.error || 'Une erreur est survenue');
-        }
-
-        // Formater les dates pour l'input datetime-local
-        const formatDate = (dateString: string) => {
-          const date = new Date(dateString);
-          return date.toISOString().slice(0, 16);
-        };
-
-        setFormData({
-          ...data,
-          startDate: formatDate(data.startDate),
-          endDate: formatDate(data.endDate),
-          registrationDeadline: formatDate(data.registrationDeadline),
-        });
-      } catch (err: any) {
-        setError(err.message);
-      } finally {
+  const fetchTournament = async () => {
+    try {
+      setIsLoading(true);
+      const token = localStorage.getItem('token') || '';
+      
+      if (!token) {
+        setError('Vous devez être connecté pour accéder à cette page');
         setIsLoading(false);
+        return;
       }
-    };
-
-    fetchTournament();
-  }, [params.id]);
+      
+      const response = await fetch(`/api/admin/tournaments/${resolvedParams.id}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `Erreur ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      const formatDate = (dateString: string) => {
+        const date = new Date(dateString);
+        return date.toISOString().split('T')[0];
+      };
+      
+      setFormData({
+        tournamentName: data.name,
+        format: data.type,
+        startDate: formatDate(data.startDate),
+        startTime: data.startTime,
+        description: data.description || '',
+        maxParticipants: data.maxParticipants,
+        rules: data.rules || '',
+        prizes: data.prizes || '',
+        status: data.status,
+        gameId: data.game?.id || 0
+      });
+    } catch (error) {
+      setError('Erreur lors du chargement du tournoi');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  
+  const fetchGames = async () => {
+    try {
+      const token = localStorage.getItem('token') || '';
+      
+      if (!token) return;
+      
+      const response = await fetch('/api/admin/games', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setGames(data);
+      }
+    } catch (error) {
+      console.error('Erreur lors du chargement des jeux');
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -66,207 +119,280 @@ export default function EditTournamentPage({ params }: PageProps) {
     setLoading(true);
 
     try {
-      const res = await fetch(`/api/admin/tournaments/${params.id}`, {
+      const token = localStorage.getItem('token') || '';
+      
+      if (!token) {
+        setError('Vous devez être connecté pour effectuer cette action');
+        setLoading(false);
+        return;
+      }
+      
+      // Adapter les données pour correspondre au schéma de l'API
+      const apiData = {
+        ...formData,
+        // Le champ rewards est utilisé dans l'API au lieu de prizes
+        rewards: formData.prizes,
+        // S'assurer que gameId est un nombre
+        gameId: Number(formData.gameId),
+        // S'assurer que le statut est explicitement inclus
+        status: formData.status
+      };
+      
+      console.log('Données envoyées à l\'API:', apiData);
+      
+      const res = await fetch(`/api/admin/tournaments/${resolvedParams.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(apiData),
       });
 
       const data = await res.json();
 
       if (!res.ok) {
+        console.error('Erreur lors de la mise à jour:', data);
         throw new Error(data.error || 'Une erreur est survenue');
       }
 
-      router.push('/admin/tournaments');
+      console.log('Tournoi mis à jour avec succès:', data);
+      router.push(`/admin/tournaments/${resolvedParams.id}`);
     } catch (err: any) {
-      setError(err.message);
+      console.error('Erreur lors de la soumission du formulaire:', err);
+      setError(err.message || 'Une erreur est survenue');
     } finally {
       setLoading(false);
     }
   };
 
-  if (isLoading) {
+  if (authLoading || isLoading) {
     return (
-      <div className="flex justify-center items-center min-h-screen">
-        <div className="text-xl">Chargement...</div>
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
       </div>
     );
   }
-
-  return (
-    <ProtectedRoute allowedRoles={['admin']}>
-      <div className="container mx-auto px-4 py-8">
-        <div className="max-w-3xl mx-auto bg-white shadow-lg rounded-lg p-6">
-          <h1 className="text-2xl font-bold mb-6">Modifier le Tournoi</h1>
-
-          {error && (
-            <div className="mb-4 bg-red-50 text-red-600 p-4 rounded">
-              {error}
+  
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="bg-red-50 border-l-4 border-red-400 p-4 max-w-2xl">
+          <div className="flex">
+            <div className="flex-shrink-0">
+              <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+              </svg>
             </div>
-          )}
-
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Nom du tournoi
-                </label>
-                <input
-                  type="text"
-                  required
-                  className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Type de tournoi
-                </label>
-                <select
-                  required
-                  className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={formData.type}
-                  onChange={(e) => setFormData({ ...formData, type: e.target.value })}
-                >
-                  <option value="elimination">Élimination directe</option>
-                  <option value="roundRobin">Round Robin</option>
-                  <option value="swiss">Système Suisse</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Statut
-                </label>
-                <select
-                  required
-                  className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={formData.status}
-                  onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                >
-                  <option value="upcoming">À venir</option>
-                  <option value="ongoing">En cours</option>
-                  <option value="completed">Terminé</option>
-                  <option value="cancelled">Annulé</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Date de début
-                </label>
-                <input
-                  type="datetime-local"
-                  required
-                  className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={formData.startDate}
-                  onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Date de fin
-                </label>
-                <input
-                  type="datetime-local"
-                  required
-                  className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={formData.endDate}
-                  onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Nombre maximum de participants
-                </label>
-                <input
-                  type="number"
-                  required
-                  min="2"
-                  className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={formData.maxParticipants}
-                  onChange={(e) => setFormData({ ...formData, maxParticipants: parseInt(e.target.value) })}
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Date limite d'inscription
-                </label>
-                <input
-                  type="datetime-local"
-                  required
-                  className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={formData.registrationDeadline}
-                  onChange={(e) => setFormData({ ...formData, registrationDeadline: e.target.value })}
-                />
+            <div className="ml-3">
+              <p className="text-sm text-red-700">{error}</p>
+              <div className="mt-4">
+                <Link href="/admin/tournaments" className="text-sm font-medium text-red-700 hover:text-red-600">
+                  Retour à la liste des tournois
+                </Link>
               </div>
             </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Description
-              </label>
-              <textarea
-                required
-                rows={4}
-                className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Règlement
-              </label>
-              <textarea
-                required
-                rows={4}
-                className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                value={formData.rules}
-                onChange={(e) => setFormData({ ...formData, rules: e.target.value })}
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Prix et récompenses
-              </label>
-              <textarea
-                rows={4}
-                className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                value={formData.prizes}
-                onChange={(e) => setFormData({ ...formData, prizes: e.target.value })}
-              />
-            </div>
-
-            <div className="flex justify-end space-x-4">
-              <button
-                type="button"
-                onClick={() => router.back()}
-                className="px-4 py-2 border rounded-lg hover:bg-gray-50"
-              >
-                Annuler
-              </button>
-              <button
-                type="submit"
-                disabled={loading}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-              >
-                {loading ? 'Enregistrement...' : 'Enregistrer les modifications'}
-              </button>
-            </div>
-          </form>
+          </div>
         </div>
       </div>
-    </ProtectedRoute>
+    );
+  }
+  
+  if (!user || user.role !== 'admin') {
+    return null;
+  }
+
+  return (
+    <div className="container mx-auto px-4 py-8">
+      <div className="max-w-3xl mx-auto bg-white shadow-lg rounded-lg p-6">
+        <div className="flex justify-between items-center mb-6">
+          <h1 className="text-2xl font-bold">Modifier le Tournoi</h1>
+          <Link
+            href={`/admin/tournaments/${resolvedParams.id}`}
+            className="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700 transition-colors"
+          >
+            Annuler
+          </Link>
+        </div>
+
+        {error && (
+          <div className="mb-4 bg-red-50 text-red-600 p-4 rounded">
+            {error}
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Nom du tournoi
+              </label>
+              <input
+                type="text"
+                required
+                className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-black"
+                value={formData.tournamentName}
+                onChange={(e) => setFormData({ ...formData, tournamentName: e.target.value })}
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Format du tournoi
+              </label>
+              <select
+                required
+                className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-black"
+                value={formData.format}
+                onChange={(e) => setFormData({ ...formData, format: e.target.value })}
+              >
+                <option value="elimination">Élimination directe</option>
+                <option value="roundRobin">Round Robin</option>
+                <option value="league">Ligue</option>
+                <option value="swiss">Système suisse</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Date de début
+              </label>
+              <input
+                type="date"
+                required
+                className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-black"
+                value={formData.startDate}
+                onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Heure de début
+              </label>
+              <input
+                type="time"
+                required
+                className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-black"
+                value={formData.startTime}
+                onChange={(e) => setFormData({ ...formData, startTime: e.target.value })}
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Nombre maximum de participants
+              </label>
+              <input
+                type="number"
+                required
+                min="2"
+                className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-black"
+                value={formData.maxParticipants}
+                onChange={(e) => setFormData({ ...formData, maxParticipants: parseInt(e.target.value) })}
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Jeu
+              </label>
+              <select
+                required
+                className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-black"
+                value={formData.gameId}
+                onChange={(e) => setFormData({ ...formData, gameId: parseInt(e.target.value) })}
+              >
+                <option value="">Sélectionner un jeu</option>
+                {games && games.length > 0 && games.map((game: any) => (
+                  <option key={game.id} value={game.id}>
+                    {game.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Description
+            </label>
+            <textarea
+              rows={4}
+              className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-black"
+              value={formData.description}
+              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Règlement
+            </label>
+            <textarea
+              rows={4}
+              className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-black"
+              value={formData.rules}
+              onChange={(e) => setFormData({ ...formData, rules: e.target.value })}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Prix et récompenses
+            </label>
+            <textarea
+              rows={4}
+              className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-black"
+              value={formData.prizes}
+              onChange={(e) => setFormData({ ...formData, prizes: e.target.value })}
+            />
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Statut
+            </label>
+            <select
+              required
+              className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-black"
+              value={formData.status}
+              onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+            >
+              <option value="upcoming">À venir</option>
+              <option value="ongoing">En cours</option>
+              <option value="completed">Terminé</option>
+              <option value="cancelled">Annulé</option>
+            </select>
+          </div>
+
+          <div className="flex justify-end space-x-4">
+            <Link
+              href={`/admin/tournaments/${resolvedParams.id}`}
+              className="px-4 py-2 border rounded-lg hover:bg-gray-50"
+            >
+              Annuler
+            </Link>
+            <button
+              type="submit"
+              disabled={loading}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center"
+            >
+              {loading ? (
+                <>
+                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Enregistrement...
+                </>
+              ) : (
+                'Enregistrer les modifications'
+              )}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
   );
 }
