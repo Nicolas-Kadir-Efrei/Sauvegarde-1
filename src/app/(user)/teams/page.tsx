@@ -28,7 +28,16 @@ export default function TeamsPage() {
   useEffect(() => {
     const fetchTeams = async () => {
       try {
-        const res = await fetch('/api/teams/all');
+        const token = localStorage.getItem('token');
+        if (!token) {
+          throw new Error('Vous devez être connecté pour voir les équipes');
+        }
+
+        const res = await fetch('/api/teams/all', {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
         const data = await res.json();
 
         if (!res.ok) {
@@ -104,13 +113,28 @@ export default function TeamsPage() {
               >
                 <div className="p-5">
                   <div className="flex items-center space-x-4">
-                    <div className="flex-shrink-0 h-12 w-12 relative">
-                      <Image
-                        src={team.logo_url || '/default-team-logo.png'}
-                        alt={team.name}
-                        fill
-                        className="rounded-full object-cover"
-                      />
+                    <div className="flex-shrink-0 h-12 w-12 relative overflow-hidden rounded-full">
+                      {team.logo_url ? (
+                        <div className="w-full h-full">
+                          <img 
+                            src={team.logo_url}
+                            alt={team.name}
+                            className="w-full h-full object-cover rounded-full"
+                            onError={(e) => {
+                              // Fallback en cas d'erreur de chargement de l'image
+                              const target = e.target as HTMLImageElement;
+                              target.src = `https://api.dicebear.com/7.x/pixel-art/svg?seed=${encodeURIComponent(team.name)}&backgroundColor=b6e3f4&radius=50`;
+                            }}
+                          />
+                        </div>
+                      ) : (
+                        <iframe 
+                          src={`https://api.dicebear.com/7.x/pixel-art/svg?seed=${encodeURIComponent(team.name)}&backgroundColor=b6e3f4&radius=50`}
+                          title={`Avatar de ${team.name}`}
+                          className="w-full h-full border-0"
+                          loading="lazy"
+                        />
+                      )}
                     </div>
                     <div>
                       <h3 className="text-lg font-medium text-black">

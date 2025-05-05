@@ -1,6 +1,9 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import prisma from './prisma';
+import { authOptions } from './authOptions';
+
+export { authOptions };
 
 export interface AuthUser {
   id: number;

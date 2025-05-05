@@ -84,9 +84,10 @@ model TournamentStatus {
 model Team {
   id           Int           @id @default(autoincrement())
   teamName     String        @db.VarChar(100)
-  tournamentId Int
+  tournamentId Int?
+  logo_url     String?       @db.VarChar(255)
   createdAt    DateTime      @default(now()) @db.Timestamp()
-  tournament   Tournament    @relation(fields: [tournamentId], references: [id])
+  tournament   Tournament?   @relation(fields: [tournamentId], references: [id])
   members      TeamMember[]
   matchesAsTeam1 Match[]     @relation("Team1")
   matchesAsTeam2 Match[]     @relation("Team2")

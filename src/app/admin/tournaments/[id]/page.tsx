@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import Link from 'next/link';
 import Image from 'next/image';
+import React from 'react';
 
 interface Tournament {
   id: number;
@@ -33,7 +34,12 @@ interface Tournament {
 }
 
 export default function TournamentDetailsPage({ params }: { params: { id: string } }) {
-  const { user, loading: authLoading } = useAuth();
+  // Déballer les params avec React.use()
+  const resolvedParams = React.use(params) as { id: string };
+  const tournamentId = resolvedParams.id;
+  
+  const { user, isAuthenticated } = useAuth();
+  const [authLoading, setAuthLoading] = useState(true);
   const router = useRouter();
   const [tournament, setTournament] = useState<Tournament | null>(null);
   const [loading, setLoading] = useState(true);
@@ -42,21 +48,31 @@ export default function TournamentDetailsPage({ params }: { params: { id: string
   const [deleteLoading, setDeleteLoading] = useState(false);
 
   useEffect(() => {
-    // Rediriger si l'utilisateur n'est pas un admin
-    if (!authLoading && (!user || user.role !== 'admin')) {
+    // Vérifier l'authentification
+    if (isAuthenticated) {
+      setAuthLoading(false);
+      
+      // Rediriger si l'utilisateur n'est pas un admin
+      if (user && user.role !== 'admin') {
+        router.push('/login');
+        return;
+      }
+      
+      // Si l'utilisateur est admin, charger les données du tournoi
+      if (user && user.role === 'admin') {
+        fetchTournament();
+      }
+    } else if (isAuthenticated === false) {
+      // Si l'utilisateur n'est pas authentifié, rediriger
+      setAuthLoading(false);
       router.push('/login');
-      return;
     }
-    
-    if (!authLoading && user && user.role === 'admin') {
-      fetchTournament();
-    }
-  }, [authLoading, user, router, params.id]);
+  }, [isAuthenticated, user, router, tournamentId]);
 
   const fetchTournament = async () => {
     try {
       setLoading(true);
-      console.log(`Chargement des détails du tournoi ${params.id}...`);
+      console.log(`Chargement des détails du tournoi ${tournamentId}...`);
       
       // Récupérer le token depuis localStorage
       const token = localStorage.getItem('token') || '';
@@ -67,7 +83,7 @@ export default function TournamentDetailsPage({ params }: { params: { id: string
         return;
       }
       
-      const response = await fetch(`/api/admin/tournaments/${params.id}`, {
+      const response = await fetch(`/api/admin/tournaments/${tournamentId}`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -104,7 +120,7 @@ export default function TournamentDetailsPage({ params }: { params: { id: string
         return;
       }
       
-      const response = await fetch(`/api/admin/tournaments/${params.id}`, {
+      const response = await fetch(`/api/admin/tournaments/${tournamentId}`, {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',

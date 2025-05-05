@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
+import { useAuth } from '@/contexts/AuthContext';
+import { useRouter } from 'next/navigation';
 
 interface Contact {
   id: string;
@@ -15,18 +17,48 @@ interface Contact {
 }
 
 export default function ContactsPage() {
+  const { user, isAuthenticated } = useAuth();
+  const router = useRouter();
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [filter, setFilter] = useState('all'); // all, unread, read, archived
 
   useEffect(() => {
-    fetchContacts();
-  }, []);
+    // Vérifier si l'utilisateur est authentifié et est un admin
+    if (isAuthenticated === false) {
+      router.push('/login');
+      return;
+    }
+    
+    if (user && user.role !== 'admin') {
+      router.push('/');
+      return;
+    }
+    
+    if (isAuthenticated) {
+      fetchContacts();
+    }
+  }, [isAuthenticated, user, router]);
 
   const fetchContacts = async () => {
     try {
-      const res = await fetch('/api/admin/contacts');
+      // Récupérer le token depuis localStorage
+      const token = localStorage.getItem('token');
+      
+      if (!token) {
+        setError('Vous devez être connecté pour accéder à cette page');
+        setLoading(false);
+        router.push('/login');
+        return;
+      }
+      
+      const res = await fetch('/api/admin/contacts', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
       const data = await res.json();
 
       if (!res.ok) {
@@ -35,6 +67,7 @@ export default function ContactsPage() {
 
       setContacts(data);
     } catch (err: any) {
+      console.error('Erreur lors de la récupération des contacts:', err);
       setError(err.message);
     } finally {
       setLoading(false);
@@ -43,10 +76,19 @@ export default function ContactsPage() {
 
   const updateContactStatus = async (id: string, status: string) => {
     try {
+      // Récupérer le token depuis localStorage
+      const token = localStorage.getItem('token');
+      
+      if (!token) {
+        setError('Vous devez être connecté pour effectuer cette action');
+        return;
+      }
+      
       const res = await fetch(`/api/admin/contacts/${id}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({ status }),
       });
@@ -72,8 +114,19 @@ export default function ContactsPage() {
     }
 
     try {
+      // Récupérer le token depuis localStorage
+      const token = localStorage.getItem('token');
+      
+      if (!token) {
+        setError('Vous devez être connecté pour effectuer cette action');
+        return;
+      }
+      
       const res = await fetch(`/api/admin/contacts/${id}`, {
         method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
       });
 
       if (!res.ok) {

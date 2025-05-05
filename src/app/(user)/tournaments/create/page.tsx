@@ -31,11 +31,27 @@ export default function CreateTournamentPage() {
     startTime: '',
     format: '',
     rules: '',
-    maxParticipants: '',
-    minTeams: '',
-    playersPerTeam: '',
+    maxParticipants: '0',
+    minTeams: '0',
+    playersPerTeam: '0',
     rewards: ''
   });
+  
+  // Calculer automatiquement le nombre maximum de participants
+  useEffect(() => {
+    if (formData.minTeams && formData.playersPerTeam) {
+      const minTeams = parseInt(formData.minTeams);
+      const playersPerTeam = parseInt(formData.playersPerTeam);
+      
+      if (!isNaN(minTeams) && !isNaN(playersPerTeam)) {
+        const totalPlayers = minTeams * playersPerTeam;
+        setFormData(prev => ({
+          ...prev,
+          maxParticipants: totalPlayers.toString()
+        }));
+      }
+    }
+  }, [formData.minTeams, formData.playersPerTeam]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -69,6 +85,11 @@ export default function CreateTournamentPage() {
     setLoading(true);
 
     try {
+      // Calculer le nombre total de participants
+      const minTeams = parseInt(formData.minTeams);
+      const playersPerTeam = parseInt(formData.playersPerTeam);
+      const totalPlayers = minTeams * playersPerTeam;
+      
       const token = localStorage.getItem('token');
       const res = await fetch('/api/tournaments', {
         method: 'POST',
@@ -80,10 +101,10 @@ export default function CreateTournamentPage() {
           ...formData,
           gameId: parseInt(formData.gameId),
           tournament_typeId: parseInt(formData.tournament_typeId),
-          maxParticipants: parseInt(formData.maxParticipants),
+          maxParticipants: totalPlayers,
           minTeams: parseInt(formData.minTeams),
           playersPerTeam: parseInt(formData.playersPerTeam),
-          totalPlayers: parseInt(formData.maxParticipants)
+          totalPlayers: totalPlayers
         }),
       });
 
@@ -182,14 +203,19 @@ export default function CreateTournamentPage() {
                   onChange={(e) => setFormData({ ...formData, format: e.target.value })}
                 />
 
-                <Input
-                  label="Maximum Participants"
-                  type="number"
-                  required
-                  min="2"
-                  value={formData.maxParticipants}
-                  onChange={(e) => setFormData({ ...formData, maxParticipants: e.target.value })}
-                />
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Maximum Participants (calculé automatiquement)
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    readOnly
+                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-black bg-gray-100"
+                    value={formData.maxParticipants}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Calculé à partir du nombre d'équipes et de joueurs par équipe</p>
+                </div>
 
                 <Input
                   label="Minimum Teams"

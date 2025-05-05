@@ -1,28 +1,38 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, NextRequest } from 'next/server';
 import prisma from '@/lib/prisma';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { verifyToken } from '@/lib/auth';
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-
-    if (!session || !session.user) {
+    // Récupérer le token d'autorisation
+    const authHeader = request.headers.get('authorization');
+    
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return NextResponse.json(
         { error: 'Vous devez être connecté pour créer une équipe' },
         { status: 401 }
       );
     }
-
-    const { name, tag, description, logo_url } = await request.json();
+    
+    const token = authHeader.substring(7); // Enlever 'Bearer '
+    
+    // Vérifier et décoder le token
+    const userData = await verifyToken(token);
+    
+    if (!userData || !userData.id) {
+      return NextResponse.json(
+        { error: 'Session invalide ou expirée' },
+        { status: 401 }
+      );
+    }
+    
+    const userId = Number(userData.id);
+    const { name, tag, description, logo_url, invitedUsers } = await request.json();
 
     // Vérifier si le nom d'équipe existe déjà
     const existingTeam = await prisma.team.findFirst({
       where: {
-        OR: [
-          { name: { equals: name, mode: 'insensitive' } },
-          { tag: { equals: tag, mode: 'insensitive' } },
-        ],
+        teamName: { equals: name, mode: 'insensitive' }
       },
     });
 
@@ -33,22 +43,53 @@ export async function POST(request: Request) {
       );
     }
 
-    // Créer l'équipe
+    // Trouver un tournoi disponible pour associer l'équipe
+    const tournaments = await prisma.tournament.findMany({
+      take: 1,
+      orderBy: {
+        id: 'asc'
+      }
+    });
+    
+    if (tournaments.length === 0) {
+      return NextResponse.json(
+        { error: 'Aucun tournoi disponible pour créer une équipe. Veuillez créer un tournoi d\'abord.' },
+        { status: 400 }
+      );
+    }
+    
+    // Créer l'équipe avec le premier tournoi disponible
     const team = await prisma.team.create({
       data: {
-        name,
-        tag,
-        description,
-        logo_url: logo_url || null,
-        captain_id: session.user.id,
-        members: {
-          create: {
-            user_id: session.user.id,
-            role: 'CAPTAIN',
-          },
-        },
+        teamName: name,
+        tournamentId: tournaments[0].id,
+        createdAt: new Date(),
       },
     });
+    
+    // Ajouter le capitaine
+    await prisma.teamMember.create({
+      data: {
+        userId: userId,
+        teamId: team.id,
+        role: 'CAPTAIN',
+        joined_at: new Date()
+      },
+    });
+    
+    // Ajouter les utilisateurs invités si fournis
+    if (invitedUsers && Array.isArray(invitedUsers) && invitedUsers.length > 0) {
+      for (const invitedUserId of invitedUsers) {
+        await prisma.teamMember.create({
+          data: {
+            teamId: team.id, // Utiliser teamId au lieu de team_id
+            userId: Number(invitedUserId), // Utiliser userId au lieu de user_id
+            role: 'MEMBER',
+            joined_at: new Date()
+          },
+        });
+      }
+    }
 
     return NextResponse.json(team);
   } catch (error: any) {
@@ -60,22 +101,37 @@ export async function POST(request: Request) {
   }
 }
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-
-    if (!session || !session.user) {
+    // Récupérer le token d'autorisation
+    const authHeader = request.headers.get('authorization');
+    
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return NextResponse.json(
         { error: 'Vous devez être connecté pour voir les équipes' },
         { status: 401 }
       );
     }
+    
+    const token = authHeader.substring(7); // Enlever 'Bearer '
+    
+    // Vérifier et décoder le token
+    const userData = await verifyToken(token);
+    
+    if (!userData || !userData.id) {
+      return NextResponse.json(
+        { error: 'Session invalide ou expirée' },
+        { status: 401 }
+      );
+    }
+    
+    const userId = Number(userData.id);
 
     const teams = await prisma.team.findMany({
       where: {
         members: {
           some: {
-            user_id: session.user.id,
+            userId: userId,
           },
         },
       },

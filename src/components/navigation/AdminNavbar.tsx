@@ -34,16 +34,6 @@ export default function AdminNavbar() {
                 Tableau de bord
               </Link>
               <Link
-                href="/admin/users"
-                className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium ${
-                  isActive('/admin/users')
-                    ? 'border-blue-500 text-black'
-                    : 'border-transparent text-black hover:border-gray-300'
-                }`}
-              >
-                Utilisateurs
-              </Link>
-              <Link
                 href="/admin/tournaments"
                 className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium ${
                   isActive('/admin/tournaments')
@@ -54,6 +44,16 @@ export default function AdminNavbar() {
                 Tournois
               </Link>
               <Link
+                href="/admin/users"
+                className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium ${
+                  isActive('/admin/users')
+                    ? 'border-blue-500 text-black'
+                    : 'border-transparent text-black hover:border-gray-300'
+                }`}
+              >
+                Utilisateurs
+              </Link>
+              <Link
                 href="/admin/contacts"
                 className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium ${
                   isActive('/admin/contacts')
@@ -61,7 +61,7 @@ export default function AdminNavbar() {
                     : 'border-transparent text-black hover:border-gray-300'
                 }`}
               >
-                Messages
+                Contacts
               </Link>
             </div>
           </div>
@@ -139,16 +139,6 @@ export default function AdminNavbar() {
               Tableau de bord
             </Link>
             <Link
-              href="/admin/users"
-              className={`block pl-3 pr-4 py-2 border-l-4 text-base font-medium ${
-                isActive('/admin/users')
-                  ? 'bg-blue-50 border-blue-500 text-black'
-                  : 'border-transparent text-black hover:bg-gray-50 hover:border-gray-300'
-              }`}
-            >
-              Utilisateurs
-            </Link>
-            <Link
               href="/admin/tournaments"
               className={`block pl-3 pr-4 py-2 border-l-4 text-base font-medium ${
                 isActive('/admin/tournaments')
@@ -159,6 +149,16 @@ export default function AdminNavbar() {
               Tournois
             </Link>
             <Link
+              href="/admin/users"
+              className={`block pl-3 pr-4 py-2 border-l-4 text-base font-medium ${
+                isActive('/admin/users')
+                  ? 'bg-blue-50 border-blue-500 text-black'
+                  : 'border-transparent text-black hover:bg-gray-50 hover:border-gray-300'
+              }`}
+            >
+              Utilisateurs
+            </Link>
+            <Link
               href="/admin/contacts"
               className={`block pl-3 pr-4 py-2 border-l-4 text-base font-medium ${
                 isActive('/admin/contacts')
@@ -166,7 +166,7 @@ export default function AdminNavbar() {
                   : 'border-transparent text-black hover:bg-gray-50 hover:border-gray-300'
               }`}
             >
-              Messages
+              Contacts
             </Link>
           </div>
           <div className="pt-4 pb-3 border-t border-gray-200">

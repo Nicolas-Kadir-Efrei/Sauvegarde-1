@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { useAuth } from '@/contexts/AuthContext';
+import Select, { StylesConfig, ActionMeta } from 'react-select';
 
 interface UserSearchResult {
   id: string;
@@ -17,13 +18,10 @@ export default function CreateTeamPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const [formData, setFormData] = useState({
-    name: '',
-    tag: '',
-    description: '',
+    name: '', // Sera utilisé comme teamName dans l'API
     logo_url: ''
   });
   
-  const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -32,53 +30,71 @@ export default function CreateTeamPage() {
   const [selectedUsers, setSelectedUsers] = useState<UserSearchResult[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
 
-  const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      if (file.size > 5 * 1024 * 1024) { // 5MB limit
-        setError('Le fichier est trop volumineux. Taille maximum : 5MB');
-        return;
-      }
-
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setLogoPreview(reader.result as string);
-      };
-      reader.readAsDataURL(file);
-      setLogoFile(file);
-    }
-  };
-
   const handleLogoUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const url = e.target.value;
     setFormData({ ...formData, logo_url: url });
-    setLogoPreview(url);
-    setLogoFile(null);
+    if (url) {
+      // Effacer toute erreur précédente
+      setError('');
+      // Mettre à jour la prévisualisation
+      setLogoPreview(url);
+    } else {
+      setLogoPreview('');
+    }
+  };
+  
+  // Vérifier si l'URL de l'image est valide - cette fonction n'est plus utilisée directement
+  // car nous laissons le navigateur tenter de charger l'image et gérer les erreurs
+  const isValidImageUrl = (url: string) => {
+    if (!url) return false;
+    // Accepter toutes les URLs - nous utilisons maintenant l'événement onError pour gérer les erreurs
+    return true;
   };
 
+  const [allUsers, setAllUsers] = useState<UserSearchResult[]>([]);
+  
+  // Charger tous les utilisateurs au chargement de la page
+  useEffect(() => {
+    const fetchAllUsers = async () => {
+      setSearchLoading(true);
+      try {
+        const token = localStorage.getItem('token');
+        const res = await fetch('/api/users/all', {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          throw new Error(data.error);
+        }
+
+        setAllUsers(data);
+      } catch (err: any) {
+        setError(err.message);
+      } finally {
+        setSearchLoading(false);
+      }
+    };
+
+    fetchAllUsers();
+  }, []);
+  
   const searchUsers = async (query: string) => {
-    if (query.length < 3) {
+    if (query.length < 2) {
       setSearchResults([]);
       return;
     }
 
-    setSearchLoading(true);
-    try {
-      const res = await fetch(`/api/users/search?q=${encodeURIComponent(query)}`);
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error);
-      }
-
-      setSearchResults(data.filter((user: UserSearchResult) => 
-        !selectedUsers.some(selected => selected.id === user.id)
-      ));
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setSearchLoading(false);
-    }
+    // Filtrer les utilisateurs localement
+    const filteredUsers = allUsers.filter(user => 
+      (user.name?.toLowerCase().includes(query.toLowerCase()) || 
+       user.email.toLowerCase().includes(query.toLowerCase())) &&
+      !selectedUsers.some(selected => selected.id === user.id)
+    );
+    
+    setSearchResults(filteredUsers);
   };
 
   const handleUserSelect = (user: UserSearchResult) => {
@@ -91,24 +107,7 @@ export default function CreateTeamPage() {
     setSelectedUsers(selectedUsers.filter(u => u.id !== user.id));
   };
 
-  const uploadLogo = async (): Promise<string> => {
-    if (!logoFile) return formData.logo_url;
-
-    const formData = new FormData();
-    formData.append('file', logoFile);
-
-    const res = await fetch('/api/upload', {
-      method: 'POST',
-      body: formData,
-    });
-
-    if (!res.ok) {
-      throw new Error('Erreur lors de l\'upload du logo');
-    }
-
-    const data = await res.json();
-    return data.url;
-  };
+  // Pas besoin d'uploader le logo puisqu'on utilise uniquement l'URL
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -116,18 +115,19 @@ export default function CreateTeamPage() {
     setError('');
 
     try {
-      // Upload logo if file is selected
-      const logoUrl = await uploadLogo();
+      // Accepter toutes les URLs pour plus de flexibilité
+      // Les utilisateurs peuvent utiliser n'importe quelle URL d'image
 
       // Create team
+      const token = localStorage.getItem('token');
       const teamRes = await fetch('/api/teams', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
         },
         body: JSON.stringify({
           ...formData,
-          logo_url: logoUrl,
           invitedUsers: selectedUsers.map(u => u.id),
         }),
       });
@@ -162,48 +162,20 @@ export default function CreateTeamPage() {
             {/* Informations de base */}
             <div className="space-y-6">
               <div>
-                <label htmlFor="name" className="block mb-2 text-black font-medium">
+                <label className="block mb-2 text-black font-medium">
                   Nom de l&apos;équipe
                 </label>
                 <input
                   type="text"
-                  id="name"
-                  required
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-black"
                   placeholder="Nom de votre équipe"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="tag" className="block mb-2 text-black font-medium">
-                  Tag de l&apos;équipe
-                </label>
-                <input
-                  type="text"
-                  id="tag"
                   required
-                  value={formData.tag}
-                  onChange={(e) => setFormData({ ...formData, tag: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-black"
-                  placeholder="Tag (ex: TSM, G2, etc.)"
                 />
-              </div>
-
-              <div>
-                <label htmlFor="description" className="block mb-2 text-black font-medium">
-                  Description
-                </label>
-                <textarea
-                  id="description"
-                  required
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  rows={4}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-black"
-                  placeholder="Description de votre équipe"
-                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Choisissez un nom unique pour votre équipe
+                </p>
               </div>
             </div>
 
@@ -211,101 +183,129 @@ export default function CreateTeamPage() {
             <div className="space-y-6">
               <div>
                 <label className="block mb-2 text-black font-medium">
-                  Logo de l&apos;équipe
+                  Logo de l'équipe (URL)
                 </label>
                 <div className="space-y-4">
-                  {/* Logo preview */}
-                  {logoPreview && (
-                    <div className="relative w-32 h-32 mx-auto">
-                      <Image
-                        src={logoPreview}
-                        alt="Logo preview"
-                        fill
-                        className="object-cover rounded-lg"
-                      />
+                  <div className="flex items-center space-x-4">
+                    <div
+                      className="w-24 h-24 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center overflow-hidden relative bg-gray-50"
+                    >
+                      {logoPreview ? (
+                        <div className="w-full h-full">
+                          <img
+                            src={logoPreview}
+                            alt="Logo preview"
+                            className="w-full h-full object-cover"
+                            onError={(e) => {
+                              const target = e.target as HTMLImageElement;
+                              // Utiliser une image de remplacement en cas d'erreur
+                              target.src = `https://api.dicebear.com/7.x/pixel-art/svg?seed=${encodeURIComponent(formData.name || 'team')}&backgroundColor=b6e3f4&radius=50`;
+                              // Afficher un message d'erreur
+                              setError("L'URL de l'image n'est pas valide ou l'image n'est pas accessible. Une image par défaut sera utilisée.");
+                              // Après 3 secondes, effacer le message d'erreur
+                              setTimeout(() => setError(''), 3000);
+                            }}
+                          />
+                        </div>
+                      ) : (
+                        <div className="flex flex-col items-center justify-center">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                          </svg>
+                          <span className="text-gray-400 text-xs text-center mt-1">
+                            Aperçu du logo
+                          </span>
+                        </div>
+                      )}
                     </div>
-                  )}
-
-                  {/* File upload */}
-                  <div>
-                    <label className="block mb-2 text-sm text-black">
-                      Importer une image
-                    </label>
-                    <input
-                      type="file"
-                      ref={fileInputRef}
-                      onChange={handleLogoChange}
-                      accept="image/*"
-                      className="block w-full text-sm text-black
-                        file:mr-4 file:py-2 file:px-4
-                        file:rounded-full file:border-0
-                        file:text-sm file:font-semibold
-                        file:bg-blue-50 file:text-blue-700
-                        hover:file:bg-blue-100"
-                    />
-                  </div>
-
-                  {/* URL input */}
-                  <div>
-                    <label className="block mb-2 text-sm text-black">
-                      Ou utiliser une URL
-                    </label>
-                    <input
-                      type="url"
-                      value={formData.logo_url}
-                      onChange={handleLogoUrlChange}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-black"
-                      placeholder="https://exemple.com/logo.png"
-                    />
+                    <div className="flex-1">
+                      <div>
+                        <label className="block text-sm text-gray-600 mb-1">
+                          URL de l'image
+                        </label>
+                        <div className="mt-1">
+                          <div className="flex">
+                            <input
+                              type="text"
+                              id="logo_url"
+                              name="logo_url"
+                              value={formData.logo_url}
+                              onChange={handleLogoUrlChange}
+                              className="shadow-sm focus:ring-blue-500 focus:border-blue-500 block w-full sm:text-sm border-gray-300 rounded-md text-black"
+                              placeholder="https://example.com/image.jpg"
+                            />
+                            {!formData.logo_url && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const defaultLogo = `https://api.dicebear.com/7.x/pixel-art/svg?seed=${encodeURIComponent(formData.name || 'team')}&backgroundColor=b6e3f4&radius=50`;
+                                  setFormData({ ...formData, logo_url: defaultLogo });
+                                  setLogoPreview(defaultLogo);
+                                }}
+                                className="ml-2 inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                              >
+                                Générer
+                              </button>
+                            )}
+                          </div>
+                          <p className="mt-1 text-sm text-gray-500">Entrez l'URL d'une image ou cliquez sur "Générer" pour créer un avatar automatiquement</p>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
 
-              {/* User search and invites */}
+              {/* User search and invites avec react-select */}
               <div>
                 <label className="block mb-2 text-black font-medium">
                   Inviter des joueurs
                 </label>
                 <div className="space-y-4">
                   <div className="relative">
-                    <input
-                      type="text"
-                      value={searchQuery}
-                      onChange={(e) => {
-                        setSearchQuery(e.target.value);
-                        searchUsers(e.target.value);
-                      }}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-black"
-                      placeholder="Rechercher des joueurs..."
-                    />
-                    {searchLoading && (
-                      <div className="absolute right-3 top-2">
-                        {/* Add a loading spinner here */}
-                        <span className="text-blue-500">Chargement...</span>
+                    {searchLoading ? (
+                      <div className="w-full px-4 py-2 border border-gray-300 rounded-lg text-black">
+                        <span className="text-blue-500">Chargement des utilisateurs...</span>
                       </div>
+                    ) : (
+                      <Select
+                        isMulti={false}
+                        options={allUsers
+                          .filter(user => !selectedUsers.some(selected => selected.id === user.id))
+                          .map(user => ({
+                            value: user.id,
+                            label: user.name || user.email
+                          }))}
+                        onChange={(newValue: unknown, actionMeta: ActionMeta<unknown>) => {
+                          const option = newValue as { value: string; label: string } | null;
+                          if (option) {
+                            const selectedUser = allUsers.find(user => user.id === option.value);
+                            if (selectedUser) handleUserSelect(selectedUser);
+                          }
+                        }}
+                        placeholder="Rechercher et sélectionner des joueurs..."
+                        noOptionsMessage={() => "Aucun utilisateur trouvé"}
+                        classNamePrefix="react-select"
+                        className="text-black"
+                        styles={{
+                          control: (base: any) => ({
+                            ...base,
+                            borderColor: '#d1d5db',
+                            boxShadow: 'none',
+                            '&:hover': {
+                              borderColor: '#9ca3af'
+                            }
+                          }),
+                          option: (base: any, state: { isFocused: boolean }) => ({
+                            ...base,
+                            backgroundColor: state.isFocused ? '#e5e7eb' : 'white',
+                            color: 'black'
+                          })
+                        } as StylesConfig}
+                        isClearable
+                      />
                     )}
                   </div>
-
-                  {/* Search results */}
-                  {searchResults.length > 0 && (
-                    <div className="border border-gray-200 rounded-lg divide-y">
-                      {searchResults.map((user) => (
-                        <div
-                          key={user.id}
-                          className="p-3 flex justify-between items-center hover:bg-gray-50 cursor-pointer"
-                          onClick={() => handleUserSelect(user)}
-                        >
-                          <span className="text-black">{user.name || user.email}</span>
-                          <button
-                            type="button"
-                            className="text-blue-600 hover:text-blue-800"
-                          >
-                            Inviter
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
 
                   {/* Selected users */}
                   {selectedUsers.length > 0 && (

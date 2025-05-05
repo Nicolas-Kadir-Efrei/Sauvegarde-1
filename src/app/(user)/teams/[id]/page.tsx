@@ -51,7 +51,16 @@ export default function TeamDetailsPage({ params }: { params: { id: string } }) 
 
   const fetchTeamDetails = async () => {
     try {
-      const res = await fetch(`/api/teams/${params.id}`);
+      const token = localStorage.getItem('token');
+      if (!token) {
+        throw new Error('Vous devez être connecté pour voir les détails de l\'\u00e9quipe');
+      }
+
+      const res = await fetch(`/api/teams/${params.id}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
       const data = await res.json();
 
       if (!res.ok) {
@@ -75,10 +84,16 @@ export default function TeamDetailsPage({ params }: { params: { id: string } }) 
   const handleUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        throw new Error('Vous devez être connecté pour modifier l\'\u00e9quipe');
+      }
+
       const res = await fetch(`/api/teams/${params.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
         },
         body: JSON.stringify(formData),
       });
@@ -100,10 +115,16 @@ export default function TeamDetailsPage({ params }: { params: { id: string } }) 
     e.preventDefault();
     setInviteLoading(true);
     try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        throw new Error('Vous devez être connecté pour inviter des membres');
+      }
+
       const res = await fetch(`/api/teams/${params.id}/invite`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
         },
         body: JSON.stringify({ email: inviteEmail }),
       });
@@ -133,8 +154,16 @@ export default function TeamDetailsPage({ params }: { params: { id: string } }) 
 
   const cancelInvite = async (inviteId: string) => {
     try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        throw new Error('Vous devez être connecté pour annuler une invitation');
+      }
+
       const res = await fetch(`/api/teams/${params.id}/invite/${inviteId}`, {
         method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
       });
 
       if (!res.ok) {
@@ -158,8 +187,16 @@ export default function TeamDetailsPage({ params }: { params: { id: string } }) 
     }
 
     try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        throw new Error('Vous devez être connecté pour retirer un membre');
+      }
+
       const res = await fetch(`/api/teams/${params.id}/members/${memberId}`, {
         method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
       });
 
       if (!res.ok) {
@@ -183,8 +220,16 @@ export default function TeamDetailsPage({ params }: { params: { id: string } }) 
     }
 
     try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        throw new Error('Vous devez être connecté pour supprimer une équipe');
+      }
+
       const res = await fetch(`/api/teams/${params.id}`, {
         method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
       });
 
       if (!res.ok) {
@@ -192,7 +237,7 @@ export default function TeamDetailsPage({ params }: { params: { id: string } }) 
         throw new Error(data.error || 'Une erreur est survenue');
       }
 
-      router.push('/my-teams');
+      router.push('/teams');
     } catch (err: any) {
       setError(err.message);
     }
@@ -239,13 +284,28 @@ export default function TeamDetailsPage({ params }: { params: { id: string } }) 
           <div className="p-6">
             <div className="flex items-start justify-between">
               <div className="flex items-center space-x-5">
-                <div className="flex-shrink-0 h-20 w-20 relative">
-                  <Image
-                    src={team.logo_url || '/default-team-logo.png'}
-                    alt={team.name}
-                    fill
-                    className="rounded-full object-cover"
-                  />
+                <div className="flex-shrink-0 h-20 w-20 relative overflow-hidden rounded-full">
+                  {team.logo_url ? (
+                    <div className="w-full h-full">
+                      <img 
+                        src={team.logo_url}
+                        alt={team.name}
+                        className="w-full h-full object-cover rounded-full"
+                        onError={(e) => {
+                          // Fallback en cas d'erreur de chargement de l'image
+                          const target = e.target as HTMLImageElement;
+                          target.src = `https://api.dicebear.com/7.x/pixel-art/svg?seed=${encodeURIComponent(team.name)}&backgroundColor=b6e3f4&radius=50`;
+                        }}
+                      />
+                    </div>
+                  ) : (
+                    <iframe 
+                      src={`https://api.dicebear.com/7.x/pixel-art/svg?seed=${encodeURIComponent(team.name)}&backgroundColor=b6e3f4&radius=50`}
+                      title={`Avatar de ${team.name}`}
+                      className="w-full h-full border-0"
+                      loading="lazy"
+                    />
+                  )}
                 </div>
                 {editMode ? (
                   <form onSubmit={handleUpdate} className="space-y-4 flex-1">
